@@ -1,5 +1,5 @@
 # NTNU-Blackboard-scraper
-Note: this project is not finished.
+Note: this project is not yet finished.
 
 The intention behind this project is to make a script for downloading all the content I have in Blackboard, the e-learnings-system used at NTNU university in Norway.
 
