@@ -5,15 +5,16 @@ from bs4 import BeautifulSoup as bs
 from bs4 import Comment
 import requests
 import os
+import sys
 import unicodedata
 import string
+import json
 
-#s = None # Global session-variabel
 
 class GlobalSettings():
 	def __init__(self):
 		self.rootDir = os.path.abspath(os.path.curdir)
-		self.downloadDir = os.path.join(self.rootDir, 'Nedlastinger')
+		self.downloadDir = os.path.join(self.rootDir, 'Blackboard-NTNU')
 		self.session = requests.Session()
 
 class Courses():
@@ -25,15 +26,25 @@ class Courses():
 		self.kode = kode	# Emnekode
 
 class Content():
-	def __init__(self):
-		self.courseId
-		self.contentId
-
+	def __init__(self, courseID, contentID, courseName):
+		self.courseId = courseID
+		self.coursename = courseName
+		self.id = contentID
+		self.coursePath = None
+		self.type = None
+		self.response = None
+		self.size = 0
+		self.name = None
+		self.url = ("https://ntnu.blackboard.com/webapps/blackboard/execute/content/file?cmd=view&content_id="+
+			contentID+
+			"&course_id="+
+			courseID+
+			"&launch_in_new=true")
 
 s = GlobalSettings()
 
 
-def login_settings(username=None, password=None):	# Husk å endre dette!
+def login_settings(username=None, password=None):
 	if not(username and password):
 		username = input("Brukernavn: ")
 		password = input("Passord: ")
@@ -46,14 +57,10 @@ def login_settings(username=None, password=None):	# Husk å endre dette!
 	}
 
 def login():
-	#global s
 	url = "https://ntnu.blackboard.com/webapps/login/" # URL for innlogging
 
 	login_data = login_settings()
 
-
-
-	#s = requests.Session()
 	r = s.session.get(url) # Henter nettsiden
 	soup = bs(r.content, 'html5lib')
 	login_data['blackboard.platform.security.NonceUtil.nonce'] = soup.find('input', attrs={'name': 'blackboard.platform.security.NonceUtil.nonce'})['value']
@@ -64,14 +71,15 @@ def login():
 	print("*"*75+"\nLogget inn som", fullt_navn,"\n"+"*"*75) # Skriver ut fullt navn.
 	return soup
 
-def searchInString(string, startString, stopString):
+def searchInString(string, startString, stopString=None):
+	stopIndex = len(string)
 	startIndex = string.find(startString)
-	stopIndex = string.find(stopString, startIndex)
+	if stopString != None:
+		stopIndex = string.find(stopString, startIndex+len(startString))
 
 	return string[startIndex+len(startString):stopIndex]
 
 def getCourseList():
-	#global s
 	soup = login()
 	ajaxRefresh = {
 		'action': 'refreshAjaxModule',
@@ -91,7 +99,7 @@ def getCourseList():
 	# Poster data for å requeste innholdet i modulen
 	rawCourseList = s.session.post('https://ntnu.blackboard.com/webapps/portal/execute/tabs/tabAction', data = ajaxRefresh)
 	rawCourseList=  bs(rawCourseList.content, 'html5lib') # Behandle motatt data med beautiful soup
-
+	
 	#Sortere etter semester:
 	teller = 1
 	courses = rawCourseList.find_all(class_='termHeading-coursefakeclass')
@@ -106,7 +114,6 @@ def getCourseList():
 			navn = streng[streng.find(' '):streng.find('(')-1].strip()
 			courseId = searchInString(str(a.get('href')), 'id=', '&')
 			emner[teller] = Courses(courseId, teller, semester, emnekode, navn) # Lagre som objekt i dictionary
-			#emner.append((emnekode, semester, navn, courseId, teller)) # Lagre i tuppel
 			teller += 1
 
 	return emner
@@ -116,8 +123,6 @@ def printCourseList(emner):
 
 	print('nr'.ljust(4)+ 'Emnekode'.ljust(12) + 'Semester'.ljust(12)+'Emne'.ljust(50))
 	print('-'*75)
-	#for j in emner:
-	#	print(str(j[4]).ljust(3) + '|' + j[0].ljust(12) + j[1].ljust(12) + j[2].ljust(50))
 	for k in emner:
 		print(str(emner[k].nr).ljust(3) + '|' + emner[k].kode.ljust(12) + emner[k].semester.ljust(12) + emner[k].name.ljust(50))
 	print('-'*75)
@@ -133,6 +138,7 @@ def consoleCourseList(emner):
 			queue.append(emner[k])
 
 	return queue
+
 # Hente innholdsstruktur i valgte emner
 def getCourseTree(id):
 	parameters = {
@@ -144,7 +150,11 @@ def getCourseTree(id):
 		'editMode': 'false',
 		'openInParentWindow': 'true'
 	}
-	response = s.session.post('https://ntnu.blackboard.com/webapps/blackboard/execute/course/menuFolderViewGenerator', data = parameters)
+
+	response = s.session.post('https://ntnu.blackboard.com/webapps/blackboard/execute/course/menuFolderViewGenerator',
+		data = parameters)
+	#print(response.json())
+	#print(bs(response.content, 'lxml'))
 	return response
 
 
@@ -153,32 +163,109 @@ def makeValidFilename(filename):
 	whitelist = "-_.()æøåÆØÅ %s%s" % (string.ascii_letters, string.digits)
 	char_limit = 255
 	# Bytt ut mellomrom
-	filename = filename.replace(' ','_')
-	
-	
-	cleanFilename = unicodedata.normalize('NFKD', filename).encode('UTF-8', 'ignore').decode()
+	#filename = filename.replace(' ','_')
+	filename = filename.replace('/','-')
+	filename = filename.replace('\\','-')
 	
 	# Behold aksepterte tegn
-	cleanFilename = ''.join(c for c in cleanFilename if c in whitelist)
+	cleanFilename = ''.join(c for c in filename if c in whitelist)
 
 	return cleanFilename[:char_limit]
 
+def formatFileSize(bytesize):
+	size = str(bytesize)+" B"
+	if bytesize >= 1e9:
+		size = str(round(bytesize/1e9, 2)) + " GB"
+	elif bytesize >= 1e6:
+		size = str(round(bytesize/1e6, 1)) + " MB"
+	elif bytesize >= 1e3:
+		size = str(round(bytesize/1e3, 0)) + " kB"
+	return size
 
 # Skrive data til fil
-def printToFile(directory, filename, data):
+def printToFile(directory, filename):
+	CURSOR_UP = '\x1b[1A' # Cursor up one line
+	ERASE = '\x1b[2K' # Erase current line
 	filename = makeValidFilename(filename)
-	path = os.path.join(directory, filename) 
+	os.makedirs(directory, exist_ok=True)
+	path = os.path.join(directory, filename)
+	print("\tEmne:", c.coursename)
+	print("\tFil: ",filename)
 	with open(path, 'wb') as file:
-		file.write(data)
+		initFileDownload(c.courseId, c.id)
+		if c.size == 0:
+			file.write(c.response.content)
+		else:
+			dl = 0
+			totSizeString = formatFileSize(c.size)
+			for data in c.response.iter_content(chunk_size=1024):
+				dl += len(data)
+				progressString = formatFileSize(dl) + "/" + totSizeString
+				file.write(data)
+				done = int(30 * dl / c.size)
+				sys.stdout.write(ERASE+"\r\t[%s%s]\t%s" % ('|' * done, '.' * (30-done), progressString) )
+				sys.stdout.flush()
+	print(ERASE+(CURSOR_UP+ERASE)*3+'\rLastet ned',filename,"\n---" )
 
 
-courses = getCourseList()	# Hent et array med tuppler av alle emner
+def initFileDownload(course, content, url = None):
+	c.response = s.session.get(c.url, stream = True, allow_redirects=True)
+	if ('Content-Type' in c.response.headers):
+		c.type = c.response.headers['Content-Type']
+	if c.type[0:9] == 'text/html':
+		if str(c.response.content).find('document.location') > 0: # Venter med å hente content om unødvendig.
+			newURL = searchInString(str(c.response.content), "document.location = \\\'", "\\\';")
+			c.url = "https://ntnu.blackboard.com"+newURL
+			initFileDownload(course, content)	# Rekursiv redirecting
+
+	else:
+		if ('Content-Length' in c.response.headers):
+			c.size = int(c.response.headers['Content-Length'])
+	
+
+def initCourseDownload(jsonDict, courseObj, path, indent=-1):
+	global c
+	title = ''
+	if indent>-1:
+		# Finne navn på innhold:
+		if jsonDict['type'] == "NODE":
+			title = searchInString(jsonDict["contents"], 'title=\"', '\"')
+
+		elif jsonDict['type'] == "HEADER":
+			title = jsonDict['contents']
+
+
+		if jsonDict["hasChildren"]:
+			path = os.path.join(path, makeValidFilename(title))
+			for i in jsonDict["children"]:
+				initCourseDownload(i, courseObj, path, indent+1)
+		elif jsonDict['type'] == "NODE":
+			if searchInString(jsonDict['id'],'blackboard.data.content.Link$ReferredToType:','::') == 'CONTENT':
+				content = searchInString(jsonDict['id'], 'CONTENT:::')
+				#getFile(course.id, content, title, path)
+				c = Content(courseObj.id, content, courseObj.name)
+				#initFileDownload(courseObj.id, content)
+				printToFile(path ,title)
+	else:
+		print('Initialiserer', courseObj.kode)
+		for i in jsonDict["children"]:
+			initCourseDownload(i, courseObj, path, indent+1)
+
+
+## MAIN ##
+courses = getCourseList()	# Hent et dict med emneobjekter
 printCourseList(courses)	# Skriv ut liste med alle emner
-FIFO = consoleCourseList(courses) # Opprette en kø av valgte emner
+courseQueue = consoleCourseList(courses) # Opprette en kø med emneobjekter av valgte emner
 
-os.makedirs(s.downloadDir, exist_ok=True)
 # DEQUEUE
-while len(FIFO) > 0:
-	pop = FIFO.pop(0)
+while len(courseQueue) > 0:
+	pop = courseQueue.pop(0)
 	tree = getCourseTree(pop.id)
-	printToFile(s.downloadDir, pop.name+".txt", tree.content)
+	tree = tree.json()
+	#print('Initialiserer', pop.kode)
+	path = os.path.join(s.downloadDir, makeValidFilename(pop.semester))	# Mappestruktur etter semester
+	path = os.path.join(path, makeValidFilename(pop.name))
+	contentQueue = {}
+	initCourseDownload(tree, pop, path)
+	
+print('Ferdig')
