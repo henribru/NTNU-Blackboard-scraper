@@ -1,7 +1,7 @@
-# NTNU-Blackboard-scraper
-Note: this project is not yet finished.
+# NTNU Blackboard-scraper
 
-The intention behind this project is to make a script for downloading all the content I have in Blackboard, the e-learnings-system used at NTNU university in Norway.
+This script will (hopefully) download your content stored in Blackboard, the e-learning system used at NTNU - Norwegian University of Science and Technology
 
+This project is not yet finnished, but I have published it as it can be used to download your files.
 It would be nice if you could help me finish this project, as I have no time or knowledge to finish this on my own within reasonable time.
-As I am no programmer, i am sorry for the bad code. Sorry.
+By the way; As I am no programmer, I am so sorry for the messy code.
