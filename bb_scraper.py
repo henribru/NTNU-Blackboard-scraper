@@ -9,6 +9,7 @@ import sys
 import unicodedata
 import string
 import json
+import mimetypes
 
 
 class GlobalSettings():
@@ -30,8 +31,8 @@ class Content():
 		self.courseId = courseID
 		self.coursename = courseName
 		self.id = contentID
+		self.extension = None
 		self.coursePath = None
-		self.type = None
 		self.response = None
 		self.size = 0
 		self.name = None
@@ -40,11 +41,18 @@ class Content():
 			"&course_id="+
 			courseID+
 			"&launch_in_new=true")
+	def getExt(self):
+		if ('Content-Type' in self.response.headers):
+			self.mimetype = self.response.headers['Content-Type']
+			self.mimetype = searchInString(self.mimetype, None, ';')
+			self.extension = mimetypes.guess_extension(self.mimetype)
+			return self.extension
+
 
 s = GlobalSettings()
 
 
-def login_settings(username=None, password=None):
+def login_settings(username=None, password=None):	# Husk å endre dette!
 	if not(username and password):
 		username = input("Brukernavn: ")
 		password = input("Passord: ")
@@ -73,9 +81,15 @@ def login():
 
 def searchInString(string, startString, stopString=None):
 	stopIndex = len(string)
-	startIndex = string.find(startString)
+	if startString != None:
+		startIndex = string.find(startString)
+	else:
+		startIndex = 0
+		startString = ''
 	if stopString != None:
 		stopIndex = string.find(stopString, startIndex+len(startString))
+		if stopIndex == -1:
+			return string[startIndex+len(startString):]
 
 	return string[startIndex+len(startString):stopIndex]
 
@@ -153,8 +167,6 @@ def getCourseTree(id):
 
 	response = s.session.post('https://ntnu.blackboard.com/webapps/blackboard/execute/course/menuFolderViewGenerator',
 		data = parameters)
-	#print(response.json())
-	#print(bs(response.content, 'lxml'))
 	return response
 
 
@@ -162,8 +174,6 @@ def getCourseTree(id):
 def makeValidFilename(filename):
 	whitelist = "-_.()æøåÆØÅ %s%s" % (string.ascii_letters, string.digits)
 	char_limit = 255
-	# Bytt ut mellomrom
-	#filename = filename.replace(' ','_')
 	filename = filename.replace('/','-')
 	filename = filename.replace('\\','-')
 	
@@ -188,11 +198,15 @@ def printToFile(directory, filename):
 	ERASE = '\x1b[2K' # Erase current line
 	filename = makeValidFilename(filename)
 	os.makedirs(directory, exist_ok=True)
+	initFileDownload(c.courseId, c.id)
+
 	path = os.path.join(directory, filename)
+	if c.extension != None:
+		path = path + c.extension
 	print("\tEmne:", c.coursename)
 	print("\tFil: ",filename)
 	with open(path, 'wb') as file:
-		initFileDownload(c.courseId, c.id)
+		
 		if c.size == 0:
 			file.write(c.response.content)
 		else:
@@ -203,16 +217,14 @@ def printToFile(directory, filename):
 				progressString = formatFileSize(dl) + "/" + totSizeString
 				file.write(data)
 				done = int(30 * dl / c.size)
-				sys.stdout.write(ERASE+"\r\t[%s%s]\t%s" % ('|' * done, '.' * (30-done), progressString) )
+				sys.stdout.write(ERASE+"\r\t%s%s\t%s" % ('|' * done, '.' * (30-done), progressString) )
 				sys.stdout.flush()
 	print(ERASE+(CURSOR_UP+ERASE)*3+'\rLastet ned',filename,"\n---" )
 
 
 def initFileDownload(course, content, url = None):
 	c.response = s.session.get(c.url, stream = True, allow_redirects=True)
-	if ('Content-Type' in c.response.headers):
-		c.type = c.response.headers['Content-Type']
-	if c.type[0:9] == 'text/html':
+	if c.getExt() == '.htm':
 		if str(c.response.content).find('document.location') > 0: # Venter med å hente content om unødvendig.
 			newURL = searchInString(str(c.response.content), "document.location = \\\'", "\\\';")
 			c.url = "https://ntnu.blackboard.com"+newURL
@@ -242,9 +254,7 @@ def initCourseDownload(jsonDict, courseObj, path, indent=-1):
 		elif jsonDict['type'] == "NODE":
 			if searchInString(jsonDict['id'],'blackboard.data.content.Link$ReferredToType:','::') == 'CONTENT':
 				content = searchInString(jsonDict['id'], 'CONTENT:::')
-				#getFile(course.id, content, title, path)
 				c = Content(courseObj.id, content, courseObj.name)
-				#initFileDownload(courseObj.id, content)
 				printToFile(path ,title)
 	else:
 		print('Initialiserer', courseObj.kode)
@@ -262,9 +272,7 @@ while len(courseQueue) > 0:
 	pop = courseQueue.pop(0)
 	tree = getCourseTree(pop.id)
 	tree = tree.json()
-	#print('Initialiserer', pop.kode)
-	path = os.path.join(s.downloadDir, makeValidFilename(pop.semester))	# Mappestruktur etter semester
-	path = os.path.join(path, makeValidFilename(pop.name))
+	path = os.path.join(s.downloadDir, makeValidFilename(pop.semester), makeValidFilename(pop.name))	# Mappestruktur etter semester
 	contentQueue = {}
 	initCourseDownload(tree, pop, path)
 	
