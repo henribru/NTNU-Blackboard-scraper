@@ -102,3 +102,8 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Other stuff for this project
+/debug
+/Blackboard-NTNU
+.vscode/

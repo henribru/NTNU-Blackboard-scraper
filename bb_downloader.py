@@ -1,6 +1,8 @@
 from __future__ import print_function, unicode_literals
 from bs4 import BeautifulSoup as bs
 from bs4 import Comment
+from PyInquirer import style_from_dict, Token, prompt, Separator
+from pprint import pprint
 import requests
 import os
 import sys
@@ -8,12 +10,14 @@ import unicodedata
 import string
 import json
 import mimetypes
-from functions import *
+
+
+import bb_api_func, funcs
 
 
 
 def login(session):
-	clear_screen()
+	funcs.clear_screen()
 	credentials = [
 		{
         'type': 'input',
@@ -53,32 +57,25 @@ def getContentAttachment(session, courseId, contentId):
 
 def getUserInfo(session):
 	login(session)
-	soup = session.get(base_URL + '/webapps/ee-Eesypluginv2-BBLEARN/loader2.jsp').text
-	info = json.loads(searchInString(soup, 'var eesy_userInfo=', ';\n'))
+	soup = session.get(base_URL + '/webapps/ee-Eesypluginv2-BB5def77a38a2f7/loader2.jsp').text
+	info = json.loads(funcs.searchInString(soup, 'var eesy_userInfo=', ';\n'))
 	
 	return info
 
 def getCourseList(session, userId):
 	print("\nHenter liste med emner...")
 	courses = []
-	response = getCourses(session, userId, 0).json()
-
+	response = bb_api_func.getCourses(session, userId, 0).json()
+	funcs.json_to_file(response, 'courselist.json')
 	while len(response['results']) > 0:
 		courses += response['results']
 		if 'paging' in response:
 			if 'nextPage' in response['paging']:
 				response = session.get(base_URL + '' + response['paging']['nextPage']).json()
-	courses[:] = filtertrue(isCourseAvailable, courses)
-
-	json_to_file(courses, "courses.json")
+		else:
+			break
+	funcs.json_to_file(courses, "courses.json")
 	return courses
-
-def getCourseInfo(session, course):
-	courseId = course['courseId']
-	parameters = {
-		'courseId': courseId
-	}
-	return session.get(base_URL + '/learn/api/public/v1/courses/'+courseId, params = parameters).json()
 
 def getTermInfo(session, termId):
 	parameters = {
@@ -93,7 +90,7 @@ def getCourseContent(session, courseId):
 		'recursive': True
 	}
 	content = session.get(base_URL + '/learn/api/public/v1/courses/'+courseId+'/contents', params = parameters).json()
-	#json_to_file(content, courseId+'.json')
+	funcs.json_to_file(content, courseId+'.json')
 	return content
 
 def getChildrenContent(session, courseId,contentId):
@@ -103,7 +100,7 @@ def getChildrenContent(session, courseId,contentId):
 		'recursive': True
 	}
 	content = session.get(base_URL + '/learn/api/public/v1/courses/'+courseId+'/contents/'+contentId+'/children', params = parameters).json()
-	json_to_file(content, contentId+'.json')
+	funcs.json_to_file(content, contentId+'.json')
 	return content
 
 
@@ -114,22 +111,27 @@ userInfo = getUserInfo(s)
 while len(userInfo) == 0:
 	print("\nInnlogging feilet. Prøv igjen.")
 	userInfo = getUserInfo(s)
-print('\nLogget inn som', userInfo['fullname'])
+funcs.clear_screen(userInfo['fullname'])
 userId = userInfo['pk1']
 
 courses = getCourseList(s, userId)
 
+# Sorting the courses by termin
 courseByTerm = {}
+termIdDict = {}
 for i in courses:
-	courseInfo = getCourseInfo(s, i)
-	term = getTermInfo(s, courseInfo['termId'])['name']
-	if term not in courseByTerm:
-		courseByTerm[term] = []
-	courseByTerm[term].append(courseInfo)
+	termId = i['course']['termId']
+	if termId not in termIdDict:
+		termIdDict[termId] = getTermInfo(s, termId)['name']
+	if termIdDict[termId] not in courseByTerm:
+		courseByTerm[termIdDict[termId]] = []
+	courseByTerm[termIdDict[termId]].append(i['course'])
 
-selected_courses = coursePrompt(courseByTerm)
+funcs.clear_screen(userInfo['fullname'])
+
+selected_courses = funcs.coursePrompt(courseByTerm)
 for course in selected_courses['courseIds']:
 	courseContent = getCourseContent(s, course)
-	for item in courseContent['results']:
-		if item['hasChildren'] == True:
-			getChildrenContent(s, course, item['id'])
+	# for item in courseContent['results']:
+	# 	if item['hasChildren'] == True:
+	# 		getChildrenContent(s, course, item['id'])

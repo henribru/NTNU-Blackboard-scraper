@@ -2,6 +2,11 @@ import sys, os, json
 from PyInquirer import style_from_dict, Token, prompt, Separator
 from pprint import pprint
 
+
+'''
+Here are some functions
+'''
+
 def searchInString(string, startString, stopString=None):
 	stopIndex = len(string)
 	if startString != None:
@@ -16,13 +21,6 @@ def searchInString(string, startString, stopString=None):
 
 	return string[startIndex+len(startString):stopIndex]
 
-def getCourses(session, userId, offset):
-	parameters = {
-		'userId': userId,
-		'offset':offset
-    }
-	json = session.get('https://ntnu.blackboard.com/learn/api/public/v1/users/'+userId+'/courses', params = parameters)
-	return json
 
 def filtertrue(predicate, iterable):
     # filterfalse(lambda x: x%2, range(10)) --> 0 2 4 6 8
@@ -32,13 +30,8 @@ def filtertrue(predicate, iterable):
         if predicate(x):
             yield x
 
-def isCourseAvailable(course):
-	if course['availability']['available'] == 'Yes':
-		return True
-	else:
-		return False
 
-def clear_screen():
+def clear_screen(name=None):
 	if sys.platform == 'win32':
 		os.system('cls')
 	else:
@@ -47,6 +40,9 @@ def clear_screen():
 	print('-'*43)
 	print(' Nedlastingsskript for Blackboard ved NTNU')
 	print('-'*43)
+	
+	if name != None:
+		print('Logget inn som', name, '\n')
 
 def json_to_file(payload, file_path):
 	os.makedirs("debug", exist_ok=True)
